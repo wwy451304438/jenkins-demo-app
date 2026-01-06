@@ -105,8 +105,11 @@ EOF
         
         stage('代码质量检查') {
             steps {
-                sh 'npm run lint'
-            }
+         	      // 使用 npx 确保能找到本地安装的 eslint
+        sh 'npx eslint src/ test/'
+        // 或者使用显式路径
+        // sh './node_modules/.bin/eslint src/ test/'   
+	}
             post {
                 failure {
                     echo '代码风格检查未通过，请检查 ESLint 报告'
