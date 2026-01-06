@@ -1,0 +1,21 @@
+{
+  "name": "jenkins-demo-app",
+  "version": "1.0.0",
+  "description": "A simple Node.js app for Jenkins demo",
+  "main": "src/app.js",
+  "scripts": {
+    "start": "node src/app.js",
+    "test": "jest --coverage",
+    "lint": "eslint src/ test/",
+    "docker:build": "docker build -t jenkins-demo-app:latest .",
+    "docker:run": "docker run -p 3000:3000 -d jenkins-demo-app:latest"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "supertest": "^6.3.3",
+    "eslint": "^8.56.0"
+  }
+}
