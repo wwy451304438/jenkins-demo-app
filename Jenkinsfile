@@ -2,7 +2,7 @@ pipeline {
     agent {
         docker {
             image 'node:18-alpine'
-            args '--network host -v /tmp/jenkins_npm_cache:/home/node/.npm' // 缓存优化
+            args '--rm' // 缓存优化
         }
     }
     
