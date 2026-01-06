@@ -30,12 +30,28 @@ pipeline {
         
         stage('安装依赖') {
             steps {
-                sh '''
-                    echo "当前工作目录：$(pwd)"
-                    echo "Node版本：$(node --version)"
-                    echo "NPM版本：$(npm --version)"
-                    npm ci
-                '''
+         	  // 1. 强制彻底清理可能残留的目录和文件
+        sh '''
+            echo "执行深度清理..."
+            rm -rf node_modules 2>/dev/null || true
+            rm -f package-lock.json 2>/dev/null || true
+            # 也可以考虑清理其他可能残留的锁文件
+            find . -name "*.lock" -type f -delete 2>/dev/null || true
+        '''
+        
+        // 2. 设置npm缓存到当前工作空间内的一个目录，避免使用全局缓存
+        sh '''
+            echo "设置隔离的npm缓存..."
+            # 设置缓存路径到工作空间内，确保我们有完全控制权
+            export npm_config_cache=$(pwd)/.npm-cache
+            mkdir -p $npm_config_cache
+            # 确保缓存目录权限正确
+            chown -R $(whoami) $npm_config_cache 2>/dev/null || true
+            
+            echo "开始安装依赖 (npm ci)..."
+            # 增加 --verbose 参数在失败时查看更多细节
+            npm ci --verbose
+        '''
             }
         }
         
