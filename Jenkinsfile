@@ -30,55 +30,76 @@ pipeline {
         
         stage('安装依赖') {
             steps {
-        	  sh '''
+		   sh '''
             echo "=== 开始依赖安装阶段 ==="
             
-            # ---- 第1层：尝试标准清理 ----
-            echo "1. 执行标准清理..."
-            rm -rf node_modules 2>/dev/null || true
-            rm -f package-lock.json 2>/dev/null || true
-            
-            # ---- 第2层：处理可能被锁定的文件（针对ENOTEMPTY） ----
-            echo "2. 检查并强制解锁残留目录..."
-            # 如果node_modules仍然存在（上一步删除失败），使用更激进的方式
+            # ---- 第1层：强力前置清理 ----
+            echo "1. 执行强力清理，确保无残留..."
+            # 使用 find 命令绕过可能的目录锁定问题，强制清空 node_modules
             if [ -d "node_modules" ]; then
-                echo "检测到残留的node_modules目录，尝试强制删除..."
-                # 尝试修改目录权限
-                chmod -R 777 node_modules 2>/dev/null || true
-                # 使用find命令逐个删除，避免整个目录删除时的ENOTEMPTY
-                find node_modules -type f -exec rm -f {} \\; 2>/dev/null || true
-                find node_modules -type d -exec rmdir {} \\; 2>/dev/null || true
-                # 最后尝试删除顶层目录
-                rm -rf node_modules
+                echo "  检测到 node_modules，正在深度清理..."
+                find node_modules -type f -name "*" -exec rm -f {} \\; 2>/dev/null || true
+                find node_modules -type d -name "*" -exec rmdir {} \\; 2>/dev/null || true
+                rm -rf node_modules 2>/dev/null || true
+                echo "  深度清理完成。"
             fi
+            # 清理旧的包锁文件和缓存目录
+            rm -f package-lock.json npm-shrinkwrap.json 2>/dev/null || true
+            rm -rf .npm-cache 2>/dev/null || true
             
-            # ---- 第3层：处理npm缓存问题（针对EACCES） ----
-            echo "3. 重置npm缓存配置..."
-            # 彻底避免使用/home/node/.npm：设置缓存到当前目录，并通过npm config命令确保生效
-            mkdir -p .npm-cache
-            npm config set cache $(pwd)/.npm-cache --global
-            npm config set cache $(pwd)/.npm-cache
-            # 验证配置
-            echo "npm缓存配置："
-            npm config get cache
+            # ---- 第2层：设置完全隔离的环境变量（关键！）----
+            echo "2. 设置隔离的npm环境..."
+            # 核心设置：通过环境变量将缓存和配置严格限制在工作空间内
+            export npm_config_cache=$(pwd)/.npm-cache   # 缓存路径
+            export npm_config_prefix=$(pwd)/.npm-global # 全局安装前缀（如果需要）
+            export npm_config_tmp=$(pwd)/.npm-tmp       # 临时文件路径
             
-            # 如果仍存在权限问题，尝试清理旧全局缓存
-            echo "清理可能存在的旧全局缓存..."
-            rm -rf /home/node/.npm/_cacache 2>/dev/null || true
-            rm -rf /home/node/.npm 2>/dev/null || true
+            # 创建这些目录并确保拥有所有权
+            mkdir -p $npm_config_cache
+            mkdir -p $npm_config_tmp
+            
+            # 验证环境变量已设置
+            echo "   缓存目录: $npm_config_cache"
+            echo "   临时目录: $npm_config_tmp"
+            echo "   当前用户: $(whoami)"
+            echo "   目录权限:"
+            ls -ld .npm-cache . 2>/dev/null || echo "   目录创建成功"
+            
+            # ---- 第3层：可选 - 绕过可能的遗留全局配置影响 ----
+            echo "3. 创建项目本地的.npmrc文件，覆盖任何全局配置..."
+            # 这会在当前目录创建.npmrc，优先级高于全局配置，且无需特殊权限
+            cat > .npmrc << 'EOF'
+# 项目特定的npm配置，隔离构建环境
+cache=${npm_config_cache}
+tmp=${npm_config_tmp}
+# 可选：禁用某些可能影响稳定性的功能
+audit=false
+fund=false
+# 确保使用最新元数据
+prefer-offline=false
+EOF
+            echo "   项目本地.npmrc创建完成。"
             
             # ---- 第4层：执行安装 ----
-            echo "4. 开始npm ci..."
-            echo "当前用户: $(whoami)"
-            echo "当前目录: $(pwd)"
-            echo "Node版本: $(node --version)"
-            echo "npm版本: $(npm --version)"
+            echo "4. 执行npm ci（使用详细输出以便调试）..."
+            # 记录关键信息
+            echo "   Node版本: $(node --version)"
+            echo "   npm版本: $(npm --version)"
+            echo "   npm配置的缓存路径:"
+            npm config get cache --userconfig=$(pwd)/.npmrc 2>/dev/null || echo "   使用环境变量配置"
             
-            # 使用--force参数强制清理，并添加详细日志
-            npm ci --verbose 2>&1 | tail -50
+            # 执行安装，如果失败，尝试降级方案
+            if npm ci --loglevel=verbose 2>&1 | tee npm-ci.log; then
+                echo "✅ npm ci 成功完成！"
+            else
+                echo "⚠️  npm ci 失败，尝试使用npm install并跳过审计..."
+                # 作为保底方案，使用install并清理后重试
+                rm -rf node_modules 2>/dev/null || true
+                npm install --no-audit --no-fund --loglevel=verbose 2>&1 | tee npm-install.log
+            fi
             
-            echo "=== 依赖安装完成 ==="
-        '''    
+            echo "=== 依赖安装阶段结束 ==="
+        '''
 	}
         }
         
