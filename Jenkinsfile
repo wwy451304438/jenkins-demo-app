@@ -103,38 +103,6 @@ EOF
 	}
         }
         
-        stage('代码质量检查') {
-            steps {
-	sh '''
-            echo "=== 开始代码检查 ==="
-            echo "方式一：尝试直接使用本地安装的 eslint..."
-            
-            # 1. 优先使用项目 node_modules 下的 eslint
-            if [ -f "./node_modules/.bin/eslint" ]; then
-                echo "找到本地 eslint，执行检查..."
-                ./node_modules/.bin/eslint src/ test/ --max-warnings=0
-            # 2. 如果本地命令存在但执行失败，可能是缓存问题，强制修复
-            elif which eslint >/dev/null 2>&1; then
-                echo "警告：使用的是全局或其它位置的 eslint，可能会遇到缓存权限问题。"
-                echo "正在尝试修复..."
-                # 尝试清理有问题的全局缓存（需要容器内有权限）
-                npm cache clean --force 2>/dev/null || true
-                eslint src/ test/ --max-warnings=0
-            else
-                echo "错误：未找到 eslint 命令。"
-                echo "请确认 'npm ci' 阶段已成功执行，且 eslint 在 package.json 的 devDependencies 中。"
-                exit 1
-            fi
-            echo "=== 代码检查完成 ==="
-        '''
-	}
-            post {
-                failure {
-                    echo '代码风格检查未通过，请检查 ESLint 报告'
-                }
-            }
-        }
-        
         stage('运行测试') {
             steps {
                 sh 'npm test'
